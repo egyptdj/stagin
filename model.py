@@ -113,7 +113,6 @@ class ModelSTAGIN(nn.Module):
 
         # define modules
         self.timestamp_encoder = ModuleTimestamping(input_dim, hidden_dim, hidden_dim)
-        self.meanpattern_encoder = nn.Sequential(nn.Linear(input_dim, round(garo_upscale*hidden_dim)), nn.BatchNorm1d(round(garo_upscale*hidden_dim)), nn.GELU())
         self.initial_linear = nn.Linear(input_dim+hidden_dim, hidden_dim)
         self.gnn_layers = nn.ModuleList()
         self.readout_modules = nn.ModuleList()
