@@ -13,6 +13,57 @@ PyTorch implementation of STAGIN from the preprint:
 ### Dataset
 The fMRI data used for the experiments of the paper should be downloaded from the [Human Connectome Project](https://db.humanconnectome.org/).
 
+##### Example of the directory tree
+```
+data (specified by option --sourcedir)
+├─── behavioral
+│    ├─── hcp.csv
+│    ├─── hcp_taskrest_EMOTION.csv
+│    ├─── hcp_taskrest_GAMBLING.csv
+│    ├─── ...
+│    └─── hcp_taskrest_WM.csv
+├─── img
+│    ├─── REST
+│    │    ├─── 123456.nii.gz
+│    │    ├─── 234567.nii.gz
+│    │    ├─── ...
+│    │    └─── 999999.nii.gz
+│    └─── TASK
+│         ├─── EMOTION
+│         │    ├─── 123456.nii.gz
+│         │    ├─── 234567.nii.gz
+│         │    ├─── ...
+│         │    └─── 999999.nii.gz
+│         ├─── GAMBLING
+│         │    ├─── ...
+│         │    └─── 999999.nii.gz
+│         ├─── ...
+│         └─── WM
+│              ├─── ...
+│              └─── 999999.nii.gz
+└───roi
+     └─── 7_400_coord.csv
+```
+##### Example content of the csv files
+```
+<hcp.csv>
+| Subject | Gender |
+|---------|--------|
+| 123456  |   F    |
+| 234567  |   M    |
+| ......  | ...... |
+| 999999  |   F    |
+
+<7_400_coord.csv>
+| ROI Index | Label Name                 | R | A | S |
+|-----------|----------------------------|---|---|---|
+|         0 | NONE                       | NA| NA| NA|
+|         1 | 7Networks_LH_Vis_1         |-32|-42|-20|
+|         2 | 7Networks_LH_Vis_2         |-30|-32|-18|
+|       ... | .........                  | . | . | . |
+|       400 | 7Networks_RH_Default_PCC_9 | 8 |-50| 44|
+
+```
 
 ### Commands
 Run the main script to perform experiments
