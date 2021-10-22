@@ -1,9 +1,10 @@
 # STAGIN
 ## Spatio-Temporal Attention Graph Isomorphism Network
 
-### Paper
-PyTorch implementation of STAGIN from the preprint:
-[Learning Dynamic Graph Representation of Brain Connectome with Spatio-Temporal Attention](https://arxiv.org/abs/2105.13495)
+### Publication
+[Learning Dynamic Graph Representation of Brain Connectome with Spatio-Temporal Attention](https://arxiv.org/abs/2105.13495) \
+Byung-Hoon Kim, Jong Chul Ye, Jae-Jin Kim\
+to appear at *NeurIPS 2021*
 
 
 ### Concept
