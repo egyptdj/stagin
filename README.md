@@ -1,20 +1,20 @@
 # STAGIN
 ## Spatio-Temporal Attention Graph Isomorphism Network
 
-### Publication
+### Paper
 [Learning Dynamic Graph Representation of Brain Connectome with Spatio-Temporal Attention](https://arxiv.org/abs/2105.13495) \
-Byung-Hoon Kim, Jong Chul Ye, Jae-Jin Kim\
+Byung-Hoon Kim, Jong Chul Ye, Jae-Jin Kim \
 to appear at *NeurIPS 2021*
 
 
 ### Concept
-![Schematic illustration of STAGIN](./concept.png)
+![Schematic illustration of STAGIN](./asset/concept.png)
 
 
 ### Dataset
 The fMRI data used for the experiments of the paper should be downloaded from the [Human Connectome Project](https://db.humanconnectome.org/).
 
-##### Example of the directory tree
+##### Example structure of the directory tree
 ```
 data (specified by option --sourcedir)
 ├─── behavioral
@@ -46,16 +46,28 @@ data (specified by option --sourcedir)
      └─── 7_400_coord.csv
 ```
 ##### Example content of the csv files
+###### [data/behavioral/hcp.csv](https://db.humanconnectome.org/REST/search/dict/Subject%20Information/results?format=csv&removeDelimitersFromFieldValues=true&restricted=0&project=HCP_1200)
 ```
-<hcp.csv>
 | Subject | Gender |
 |---------|--------|
 | 123456  |   F    |
 | 234567  |   M    |
 | ......  | ...... |
 | 999999  |   F    |
+```
 
-<7_400_coord.csv>
+###### [data/behavioral/hcp_taskrest_WM.csv](./asset/)
+```
+| Task | Rest |
+|------|------|
+|  0   |  1   |
+|  0   |  1   |
+| ...  | ...  |
+|  1   |  0   |
+```
+
+###### [data/roi/7_400_coord.csv](https://github.com/ThomasYeoLab/CBIG/blob/master/stable_projects/brain_parcellation/Schaefer2018_LocalGlobal/Parcellations/MNI/Centroid_coordinates/Schaefer2018_400Parcels_7Networks_order_FSLMNI152_2mm.Centroid_RAS.csv)
+```
 | ROI Index | Label Name                 | R | A | S |
 |-----------|----------------------------|---|---|---|
 |         0 | NONE                       | NA| NA| NA|
@@ -63,8 +75,8 @@ data (specified by option --sourcedir)
 |         2 | 7Networks_LH_Vis_2         |-30|-32|-18|
 |       ... | .........                  | . | . | . |
 |       400 | 7Networks_RH_Default_PCC_9 | 8 |-50| 44|
-
 ```
+
 
 ### Commands
 Run the main script to perform experiments
