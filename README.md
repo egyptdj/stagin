@@ -2,9 +2,11 @@
 ## Spatio-Temporal Attention Graph Isomorphism Network
 
 ### Paper
-[Learning Dynamic Graph Representation of Brain Connectome with Spatio-Temporal Attention](https://arxiv.org/abs/2105.13495) \
+**Learning Dynamic Graph Representation of Brain Connectome with Spatio-Temporal Attention** \
 Byung-Hoon Kim, Jong Chul Ye, Jae-Jin Kim \
-to appear at *NeurIPS 2021*
+presented at *NeurIPS 2021* \
+<sub><sup>[ [arXiv](https://arxiv.org/abs/2105.13495), [OpenReview](https://openreview.net/forum?id=X7GEA3KiJiH), [proceeding](https://papers.nips.cc/paper/2021/hash/22785dd2577be2ce28ef79febe80db10-Abstract.html) ]</sup></sub>
+
 
 
 ### Concept
@@ -27,6 +29,11 @@ data (specified by option --sourcedir)
 │    ├─── REST
 │    │    ├─── 123456.nii.gz
 │    │    ├─── 234567.nii.gz
+### Concept
+![Schematic illustration of STAGIN](./asset/concept.png)
+
+
+### Dataset
 │    │    ├─── ...
 │    │    └─── 999999.nii.gz
 │    └─── TASK
