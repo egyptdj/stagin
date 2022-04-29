@@ -29,11 +29,6 @@ data (specified by option --sourcedir)
 │    ├─── REST
 │    │    ├─── 123456.nii.gz
 │    │    ├─── 234567.nii.gz
-### Concept
-![Schematic illustration of STAGIN](./asset/concept.png)
-
-
-### Dataset
 │    │    ├─── ...
 │    │    └─── 999999.nii.gz
 │    └─── TASK
@@ -115,6 +110,10 @@ Command-line options can be listed with -h flag.
 For brainplot:
 - MRIcroGL >= 1.2
 - opencv-python == 4.5.2
+
+
+### Updates
+- 2022-04-29 `5c262d8d`: Top k-percentile values from the adjacency matrix is now calculated without the need for calling .detach().cpu().numpy() which improves computation speed.
 
 
 ### Contact
