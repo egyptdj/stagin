@@ -112,6 +112,7 @@ class ModelSTAGIN(nn.Module):
         self.sparsity = sparsity
 
         # define modules
+        self.percentile = Percentile()
         self.timestamp_encoder = ModuleTimestamping(input_dim, hidden_dim, hidden_dim)
         self.initial_linear = nn.Linear(input_dim+hidden_dim, hidden_dim)
         self.gnn_layers = nn.ModuleList()
@@ -127,12 +128,13 @@ class ModelSTAGIN(nn.Module):
             self.linear_layers.append(nn.Linear(hidden_dim, num_classes))
 
 
-    def _collate_adjacency(self, a, sparse=True):
+    def _collate_adjacency(self, a, sparsity, sparse=True):
         i_list = []
         v_list = []
+
         for sample, _dyn_a in enumerate(a):
             for timepoint, _a in enumerate(_dyn_a):
-                thresholded_a = (_a > np.percentile(_a.detach().cpu().numpy(), 100-self.sparsity))
+                thresholded_a = (_a > self.percentile(_a, 100-sparsity))
                 _i = thresholded_a.nonzero(as_tuple=False)
                 _v = torch.ones(len(_i))
                 _i += sample * a.shape[1] * a.shape[2] + timepoint * a.shape[2]
@@ -159,8 +161,7 @@ class ModelSTAGIN(nn.Module):
         h = torch.cat([v, time_encoding], dim=3)
         h = rearrange(h, 'b t n c -> (b t n) c')
         h = self.initial_linear(h)
-
-        a = self._collate_adjacency(a)
+        a = self._collate_adjacency(a, self.sparsity)
         for layer, (G, R, T, L) in enumerate(zip(self.gnn_layers, self.readout_modules, self.transformer_modules, self.linear_layers)):
             h = G(h, a)
             h_bridge = rearrange(h, '(b t n) c -> t b n c', t=num_timepoints, b=minibatch_size, n=num_nodes)
@@ -183,6 +184,76 @@ class ModelSTAGIN(nn.Module):
         latent = torch.stack(latent_list, dim=1)
 
         return logit, attention, latent, reg_ortho
+
+
+# Percentile class based on
+# https://github.com/aliutkus/torchpercentile
+class Percentile(torch.autograd.Function):
+    def __init__(self):
+        super().__init__()
+
+
+    def __call__(self, input, percentiles):
+        return self.forward(input, percentiles)
+
+
+    def forward(self, input, percentiles):
+        input = torch.flatten(input) # find percentiles for flattened axis
+        input_dtype = input.dtype
+        input_shape = input.shape
+        if isinstance(percentiles, int):
+            percentiles = (percentiles,)
+        if not isinstance(percentiles, torch.Tensor):
+            percentiles = torch.tensor(percentiles, dtype=torch.double)
+        if not isinstance(percentiles, torch.Tensor):
+            percentiles = torch.tensor(percentiles)
+        input = input.double()
+        percentiles = percentiles.to(input.device).double()
+        input = input.view(input.shape[0], -1)
+        in_sorted, in_argsort = torch.sort(input, dim=0)
+        positions = percentiles * (input.shape[0]-1) / 100
+        floored = torch.floor(positions)
+        ceiled = floored + 1
+        ceiled[ceiled > input.shape[0] - 1] = input.shape[0] - 1
+        weight_ceiled = positions-floored
+        weight_floored = 1.0 - weight_ceiled
+        d0 = in_sorted[floored.long(), :] * weight_floored[:, None]
+        d1 = in_sorted[ceiled.long(), :] * weight_ceiled[:, None]
+        self.save_for_backward(input_shape, in_argsort, floored.long(),
+                               ceiled.long(), weight_floored, weight_ceiled)
+        result = (d0+d1).view(-1, *input_shape[1:])
+        return result.type(input_dtype)
+
+
+    def backward(self, grad_output):
+        """
+        backward the gradient is basically a lookup table, but with weights
+        depending on the distance between each point and the closest
+        percentiles
+        """
+        (input_shape, in_argsort, floored, ceiled,
+         weight_floored, weight_ceiled) = self.saved_tensors
+
+        # the argsort in the flattened in vector
+
+        cols_offsets = (
+            torch.arange(
+                    0, input_shape[1], device=in_argsort.device)
+            )[None, :].long()
+        in_argsort = (in_argsort*input_shape[1] + cols_offsets).view(-1).long()
+        floored = (
+            floored[:, None]*input_shape[1] + cols_offsets).view(-1).long()
+        ceiled = (
+            ceiled[:, None]*input_shape[1] + cols_offsets).view(-1).long()
+
+        grad_input = torch.zeros((in_argsort.size()), device=self.device)
+        grad_input[in_argsort[floored]] += (grad_output
+                                            * weight_floored[:, None]).view(-1)
+        grad_input[in_argsort[ceiled]] += (grad_output
+                                           * weight_ceiled[:, None]).view(-1)
+
+        grad_input = grad_input.view(*input_shape)
+        return grad_input
 
 
 def count_parameters(model):
