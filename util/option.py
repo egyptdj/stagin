@@ -13,7 +13,8 @@ def parse():
     parser.add_argument('-ds', '--sourcedir', type=str, default='./data')
     parser.add_argument('-dt', '--targetdir', type=str, default='./result')
 
-    parser.add_argument('--dataset', type=str, default='rest', choices=['rest', 'task'])
+    parser.add_argument('--dataset', type=str, default='hcp-rest', choices=['hcp-rest', 'hcp-task', 'ukb-rest', 'abide-rest', 'ucla-rest'])
+    parser.add_argument('--target_feature', type=str, default='Gender')
     parser.add_argument('--roi', type=str, default='schaefer', choices=['scahefer', 'aal', 'destrieux', 'harvard_oxford'])
     parser.add_argument('--fwhm', type=float, default=None)
 
@@ -37,14 +38,20 @@ def parse():
     parser.add_argument('--num_clusters', type=int, default=7)
     parser.add_argument('--subsample', type=int, default=50)
 
-    parser.add_argument('--no_train', action='store_true')
-    parser.add_argument('--no_test', action='store_true')
-    parser.add_argument('--no_analysis', action='store_true')
+    parser.add_argument('--regression', action='store_true')
+
+    parser.add_argument('--train', action='store_true')
+    parser.add_argument('--test', action='store_true')
+    parser.add_argument('--analyze', action='store_true')
+    parser.add_argument('--validate', action='store_true')
+
+    parser.add_argument('--num_workers', type=int, default=4)
+    parser.add_argument('--num_samples', type=int, default=-1)
 
     argv = parser.parse_args()
     argv.targetdir = os.path.join(argv.targetdir, argv.exp_name)
     os.makedirs(argv.targetdir, exist_ok=True)
-    with open(os.path.join(argv.targetdir, 'argv.csv'), 'w', newline='') as f:
+    with open(os.path.join(argv.targetdir, 'argv.csv'), 'a', newline='') as f:
         writer = csv.writer(f)
         writer.writerows(vars(argv).items())
     return argv
