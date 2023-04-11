@@ -23,12 +23,12 @@ def step(model, criterion, dyn_v, dyn_a, sampling_endpoints, t, label, reg_lambd
 
     # optimize model
     if optimizer is not None:
-       optimizer.zero_grad()
-       loss.backward()
-       if clip_grad > 0.0: torch.nn.utils.clip_grad_value_(model.parameters(), clip_grad)
-       optimizer.step()
-       if scheduler is not None:
-           scheduler.step()
+        optimizer.zero_grad()
+        loss.backward()
+        if clip_grad > 0.0: torch.nn.utils.clip_grad_value_(model.parameters(), clip_grad)
+        optimizer.step()
+        if scheduler is not None:
+            scheduler.step()
 
     return logit, loss, attention, latent, reg_ortho
 
@@ -49,10 +49,11 @@ def train(argv):
         device = torch.device("cpu")
 
     # define dataset
-    if argv.dataset=='rest': dataset = DatasetHCPRest(argv.sourcedir, roi=argv.roi, k_fold=argv.k_fold, smoothing_fwhm=argv.fwhm)
-    elif argv.dataset=='task': dataset = DatasetHCPTask(argv.sourcedir, roi=argv.roi, dynamic_length=argv.dynamic_length, k_fold=argv.k_fold)
+    if argv.dataset=='hcp-rest': dataset = DatasetHCPRest(argv.sourcedir, roi=argv.roi, k_fold=argv.k_fold, target_feature=argv.target_feature, smoothing_fwhm=argv.fwhm, regression=argv.regression, num_samples=argv.num_samples)
+    elif argv.dataset=='hcp-task': dataset = DatasetHCPTask(argv.sourcedir, roi=argv.roi, dynamic_length=argv.dynamic_length, k_fold=argv.k_fold)
+    elif argv.dataset=='ukb-rest': dataset = DatasetUKBRest(argv.sourcedir, roi=argv.roi, k_fold=argv.k_fold, target_feature=argv.target_feature, smoothing_fwhm=argv.fwhm, regression=argv.regression, num_samples=argv.num_samples)
     else: raise
-    dataloader = torch.utils.data.DataLoader(dataset, batch_size=argv.minibatch_size, shuffle=False, num_workers=4, pin_memory=True)
+    dataloader = torch.utils.data.DataLoader(dataset, batch_size=argv.minibatch_size, shuffle=False, num_workers=argv.num_workers, pin_memory=True)
 
     # resume checkpoint if file exists
     if os.path.isfile(os.path.join(argv.targetdir, 'checkpoint.pth')):
@@ -84,10 +85,11 @@ def train(argv):
             sparsity=argv.sparsity,
             dropout=argv.dropout,
             cls_token=argv.cls_token,
-            readout=argv.readout)
+            readout=argv.readout,
+        )
         model.to(device)
         if checkpoint['model'] is not None: model.load_state_dict(checkpoint['model'])
-        criterion = torch.nn.CrossEntropyLoss()
+        criterion = torch.nn.CrossEntropyLoss() if dataset.num_classes > 1 else torch.nn.MSELoss()
 
         # define optimizer and learning rate scheduler
         optimizer = torch.optim.Adam(model.parameters(), lr=argv.lr)
@@ -127,9 +129,10 @@ def train(argv):
                     clip_grad=argv.clip_grad,
                     device=device,
                     optimizer=optimizer,
-                    scheduler=scheduler)
-                pred = logit.argmax(1)
-                prob = logit.softmax(1)
+                    scheduler=scheduler,
+                )
+                pred = logit.argmax(1) if dataset.num_classes > 1 else logit
+                prob = logit.softmax(1) if dataset.num_classes > 1 else logit
                 loss_accumulate += loss.detach().cpu().numpy()
                 reg_ortho_accumulate += reg_ortho.detach().cpu().numpy()
                 logger.add(k=k, pred=pred.detach().cpu().numpy(), true=label.detach().cpu().numpy(), prob=prob.detach().cpu().numpy())
@@ -140,7 +143,7 @@ def train(argv):
             metrics = logger.evaluate(k)
             summary_writer.add_scalar('loss', loss_accumulate/len(dataloader), epoch)
             summary_writer.add_scalar('reg_ortho', reg_ortho_accumulate/len(dataloader), epoch)
-            summary_writer.add_pr_curve('precision-recall', samples['true'], samples['prob'][:,1], epoch)
+            if dataset.num_classes > 1: summary_writer.add_pr_curve('precision-recall', samples['true'], samples['prob'][:,1], epoch)
             [summary_writer.add_scalar(key, value, epoch) for key, value in metrics.items() if not key=='fold']
             [summary_writer.add_image(key, make_grid(value[-1].unsqueeze(1), normalize=True, scale_each=True), epoch) for key, value in attention.items()]
             summary_writer.flush()
@@ -154,6 +157,40 @@ def train(argv):
                 'optimizer': optimizer.state_dict(),
                 'scheduler': scheduler.state_dict()},
                 os.path.join(argv.targetdir, 'checkpoint.pth'))
+
+            if argv.validate:
+                logger.initialize(k)
+                dataset.set_fold(k, train=False)
+                for i, x in enumerate(dataloader):
+                    with torch.no_grad():
+                        # process input data
+                        dyn_a, sampling_points = util.bold.process_dynamic_fc(x['timeseries'], argv.window_size, argv.window_stride)
+                        sampling_endpoints = [p+argv.window_size for p in sampling_points]
+                        if i==0: dyn_v = repeat(torch.eye(dataset.num_nodes), 'n1 n2 -> b t n1 n2', t=len(sampling_points), b=argv.minibatch_size)
+                        if not dyn_v.shape[1]==dyn_a.shape[1]: dyn_v = repeat(torch.eye(dataset.num_nodes), 'n1 n2 -> b t n1 n2', t=len(sampling_points), b=argv.minibatch_size)
+                        if len(dyn_a) < argv.minibatch_size: dyn_v = dyn_v[:len(dyn_a)]
+                        t = x['timeseries'].permute(1,0,2)
+                        label = x['label']
+
+                        logit, loss, attention, latent, reg_ortho = step(
+                            model=model,
+                            criterion=criterion,
+                            dyn_v=dyn_v,
+                            dyn_a=dyn_a,
+                            sampling_endpoints=sampling_endpoints,
+                            t=t,
+                            label=label,
+                            reg_lambda=argv.reg_lambda,
+                            clip_grad=argv.clip_grad,
+                            device=device,
+                            optimizer=None,
+                            scheduler=None,
+                        )
+                        pred = logit.argmax(1) if dataset.num_classes > 1 else logit
+                        prob = logit.softmax(1) if dataset.num_classes > 1 else logit
+                        logger.add(k=k, pred=pred.detach().cpu().numpy(), true=label.detach().cpu().numpy(), prob=prob.detach().cpu().numpy())
+                metrics = logger.evaluate(k)
+                print(metrics)
 
         # finalize fold
         torch.save(model.state_dict(), os.path.join(argv.targetdir, 'model', str(k), 'model.pth'))
@@ -169,10 +206,12 @@ def test(argv):
     device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 
     # define dataset
-    if argv.dataset=='rest': dataset = DatasetHCPRest(argv.sourcedir, roi=argv.roi, k_fold=argv.k_fold, smoothing_fwhm=argv.fwhm)
-    elif argv.dataset=='task': dataset = DatasetHCPTask(argv.sourcedir, roi=argv.roi, dynamic_length=argv.dynamic_length, k_fold=argv.k_fold)
+    if argv.dataset=='hcp-rest': dataset = DatasetHCPRest(argv.sourcedir, roi=argv.roi, k_fold=argv.k_fold, target_feature=argv.target_feature, smoothing_fwhm=argv.fwhm, regression=argv.regression, num_samples=argv.num_samples)
+    elif argv.dataset=='hcp-task': dataset = DatasetHCPTask(argv.sourcedir, roi=argv.roi, dynamic_length=argv.dynamic_length, k_fold=argv.k_fold)
+    elif argv.dataset=='ukb-rest': dataset = DatasetUKBRest(argv.sourcedir, roi=argv.roi, k_fold=argv.k_fold, target_feature=argv.target_feature, smoothing_fwhm=argv.fwhm, regression=argv.regression, num_samples=argv.num_samples)
+    elif argv.dataset=='ucla-rest': dataset = DatasetFMRIPREP(argv.sourcedir, roi=argv.roi, k_fold=argv.k_fold, target_feature=argv.target_feature, smoothing_fwhm=argv.fwhm, regression=argv.regression, num_samples=argv.num_samples, prefix='ucla')
     else: raise
-    dataloader = torch.utils.data.DataLoader(dataset, batch_size=1, shuffle=False, num_workers=4, pin_memory=True)
+    dataloader = torch.utils.data.DataLoader(dataset, batch_size=1, shuffle=False, num_workers=argv.num_workers, pin_memory=True)
     logger = util.logger.LoggerSTAGIN(argv.k_fold, dataset.num_classes)
 
     for k in range(argv.k_fold):
@@ -187,10 +226,11 @@ def test(argv):
             sparsity=argv.sparsity,
             dropout=argv.dropout,
             cls_token=argv.cls_token,
-            readout=argv.readout)
+            readout=argv.readout,
+        )
         model.to(device)
         model.load_state_dict(torch.load(os.path.join(argv.targetdir, 'model', str(k), 'model.pth')))
-        criterion = torch.nn.CrossEntropyLoss()
+        criterion = torch.nn.CrossEntropyLoss() if dataset.num_classes > 1 else torch.nn.MSELoss()
 
         # define logging objects
         fold_attention = {'node_attention': [], 'time_attention': []}
@@ -224,9 +264,10 @@ def test(argv):
                     clip_grad=argv.clip_grad,
                     device=device,
                     optimizer=None,
-                    scheduler=None)
-                pred = logit.argmax(1)
-                prob = logit.softmax(1)
+                    scheduler=None,
+                )
+                pred = logit.argmax(1) if dataset.num_classes > 1 else logit
+                prob = logit.softmax(1) if dataset.num_classes > 1 else logit
                 logger.add(k=k, pred=pred.detach().cpu().numpy(), true=label.detach().cpu().numpy(), prob=prob.detach().cpu().numpy())
                 loss_accumulate += loss.detach().cpu().numpy()
                 reg_ortho_accumulate += reg_ortho.detach().cpu().numpy()
@@ -248,9 +289,9 @@ def test(argv):
 
         # finalize fold
         logger.to_csv(argv.targetdir, k)
-        if argv.dataset=='rest':
+        if 'rest' in argv.dataset:
             [np.save(os.path.join(argv.targetdir, 'attention', str(k), f'{key}.npy'), np.concatenate(value)) for key, value in fold_attention.items()]
-        elif argv.dataset=='task':
+        elif 'task' in argv.dataset:
             for key, value in fold_attention.items():
                 os.makedirs(os.path.join(argv.targetdir, 'attention', str(k), key), exist_ok=True)
                 for idx, task in enumerate(dataset.task_list):
@@ -259,6 +300,7 @@ def test(argv):
             raise
         np.save(os.path.join(argv.targetdir, 'attention', str(k), 'latent.npy'), np.concatenate(latent_accumulate))
         del fold_attention
+        del latent_accumulate
 
     # finalize experiment
     logger.to_csv(argv.targetdir)
