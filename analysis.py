@@ -1,5 +1,7 @@
 import os
+import random
 import joblib
+import torch
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -7,7 +9,7 @@ import seaborn as sns
 from copy import deepcopy
 from tqdm import tqdm
 from util import bold, option
-from dataset import DatasetHCPRest, DatasetHCPTask
+from dataset import DatasetHCPRest, DatasetUKBRest
 from torch import save, load
 from torch.utils.data import DataLoader
 from sklearn.cluster import KMeans
@@ -101,7 +103,7 @@ def analyze_rest(argv):
     dmn_index = {'L.Temp':0, 'L.PFC':17, 'L.PCC': 17+24, 'R.Par': 17+24+11, 'R.Temp':17+24+11+5, 'R.PFCv':17+24+11+5+8, 'R.PFCm': 17+24+11+5+8+4, 'R.PCC': 17+24+11+5+8+4+13}
     dmn_tick_index = {'L.Temp':(0+17)//2, 'L.PFC':(17+17+24)//2, 'L.PCC': (17+24+17+24+11)//2, 'R.Par': (17+24+11+17+24+11+5)//2, 'R.Temp':(17+24+11+5+17+24+11+5+8)//2, 'R.PFCv':(17+24+11+5+8+17+24+11+5+8+4)//2, 'R.PFCm': (17+24+11+5+8+4+17+24+11+5+8+4+13)//2, 'R.PCC': (17+24+11+5+8+4+13+17+24+11+5+8+4+13+9)//2}
 
-    sns.set_theme(context='paper', style="whitegrid", font='Freesans', font_scale=2.0, palette='muted')
+    sns.set_theme(context='paper', style="white", font='Freesans', font_scale=2.0, palette='muted')
 
     print('plot exemplar time attention')
     os.makedirs(os.path.join(analysisdir, 'time_attention', 'examples'), exist_ok=True)
@@ -117,7 +119,7 @@ def analyze_rest(argv):
             sns.heatmap(data=layer_attention, xticklabels=60, yticklabels=60, cbar=False, ax=ax[2*(layer//2)+1][layer%2])
         plt.savefig(os.path.join(analysisdir, 'time_attention', 'examples', f'rest_time_attention{i}.png'))
         plt.close()
-
+    
     print('plot exemplar node attention')
     os.makedirs(os.path.join(analysisdir, 'node_attention', 'examples'), exist_ok=True)
     for i, layer_attention in enumerate(node_attention[::100]):
@@ -143,7 +145,9 @@ def analyze_rest(argv):
         os.makedirs(os.path.join(analysisdir, 'time_attention', f'{argv.num_clusters}_means_clustering'), exist_ok=True)
         os.makedirs(os.path.join(analysisdir, 'time_attention', f'{argv.num_clusters}_means_clustering', 'model'), exist_ok=True)
         os.makedirs(os.path.join(analysisdir, 'time_attention', f'{argv.num_clusters}_means_clustering', 'figure'), exist_ok=True)
-        dataset = DatasetHCPRest(argv.sourcedir, roi=argv.roi, k_fold=argv.k_fold)
+        if argv.dataset=='hcp-rest': dataset = DatasetHCPRest(argv.sourcedir, roi=argv.roi, k_fold=argv.k_fold)
+        elif argv.dataset=='ukb-rest': dataset = DatasetUKBRest(argv.sourcedir, roi=argv.roi, k_fold=argv.k_fold, target_feature=argv.target_feature)
+        else: raise
         subsample_a_list = []
         for k in range(argv.k_fold):
             dataset.set_fold(k, train=False)
@@ -153,7 +157,7 @@ def analyze_rest(argv):
                 del dyn_a
         subsample_a = np.concatenate(subsample_a_list)
         subsample_a_features = np.stack([a[np.triu_indices(a.shape[0], k=1)].copy() for a in subsample_a])
-        model = KMeans(n_clusters=argv.num_clusters, random_state=0).fit(subsample_a_features)
+        model = KMeans(n_clusters=argv.num_clusters, random_state=argv.seed).fit(subsample_a_features)
         del subsample_a_features
 
         print('plot cluster centroids')
@@ -226,7 +230,9 @@ def analyze_rest(argv):
     except:
         print('count significant clusters')
         os.makedirs(os.path.join(analysisdir, 'time_attention', f'{argv.num_clusters}_means_clustering', 'summary'), exist_ok=True)
-        dataset = DatasetHCPRest(argv.sourcedir, roi=argv.roi, k_fold=argv.k_fold)
+        if argv.dataset=='hcp-rest': dataset = DatasetHCPRest(argv.sourcedir, roi=argv.roi, k_fold=argv.k_fold)
+        elif argv.dataset=='ukb-rest': dataset = DatasetUKBRest(argv.sourcedir, roi=argv.roi, k_fold=argv.k_fold, target_feature=argv.target_feature)
+        else: raise
         significant_clusters = {}
         for layer in range(argv.num_layers):
             significant_clusters[layer] = {}
@@ -311,15 +317,57 @@ def analyze_rest(argv):
     plt.savefig(os.path.join(analysisdir, 'time_attention', f'{argv.num_clusters}_means_clustering', 'figure', 'odds.png'))
     plt.close()
 
+    # plot dmn-smn figure
+    centroid_matrix_list = []
+    for centroid in model.cluster_centers_:
+        centroid_matrix = np.zeros([400,400])
+        centroid_matrix[np.triu_indices_from(centroid_matrix, k=1)] = centroid
+        centroid_matrix += centroid_matrix.T
+        centroid_matrix_list.append(centroid_matrix)
+
+    odds_df['fmratio_odds'] = odds_df['female_odds'] / odds_df['male_odds']
+    cluster_order = odds_df['fmratio_odds'].mean(1).argsort().tolist()[::-1]
+
+    cluster_cmap = 'jet'
+    fig, ax = plt.subplot_mosaic([[f'dmn{c}' for c in range(argv.num_clusters)]+['cbar'], [f'smn{c}' for c in range(argv.num_clusters)]+['cbar'], [f'label{c}' for c in range(argv.num_clusters)]+['empty']], figsize=(24,8), gridspec_kw={'width_ratios': [12]*argv.num_clusters+[1], 'height_ratios': [12,12,1]})
+    ax['empty'].axis('off')
+    for cluster, centroid in enumerate(centroid_matrix_list):
+        # PLOT DMN
+        centroid_dmn = np.concatenate([centroid[roi_range['L.DMN'][0]:roi_range['L.DMN'][1]], centroid[roi_range['R.DMN'][0]:roi_range['R.DMN'][1]]], axis=0)
+        centroid_dmn = np.concatenate([centroid_dmn[:,roi_range['L.DMN'][0]:roi_range['L.DMN'][1]], centroid_dmn[:,roi_range['R.DMN'][0]:roi_range['R.DMN'][1]]], axis=1)
+        sns.heatmap(data=centroid_dmn, cmap=cluster_cmap, vmin=0.0, vmax=1.0, xticklabels=False, yticklabels=False, cbar=True if cluster==0 else False, square=True, ax=ax[f'dmn{cluster_order.index(cluster)}'], cbar_ax=ax['cbar'])
+        ax[f'dmn{cluster_order.index(cluster)}'].set_title(f'Cluster {cluster+1}', fontsize=24)
+
+        # PLOT SMN
+        centroid_smn = np.concatenate([centroid[roi_range['L.SMN'][0]:roi_range['L.SMN'][1]], centroid[roi_range['R.SMN'][0]:roi_range['R.SMN'][1]]], axis=0)
+        centroid_smn = np.concatenate([centroid_smn[:,roi_range['L.SMN'][0]:roi_range['L.SMN'][1]], centroid_smn[:,roi_range['R.SMN'][0]:roi_range['R.SMN'][1]]], axis=1)
+        sns.heatmap(data=centroid_smn, cmap=cluster_cmap, vmin=0.0, vmax=1.0, xticklabels=False, yticklabels=False, cbar=False, square=True, ax=ax[f'smn{cluster_order.index(cluster)}'])
+
+        # PLOT LABEL
+        ax[f'label{cluster_order.index(cluster)}'].text(0.5, 0.5, f'Female: {odds_df["female_odds"].mean(1).to_list()[cluster]:.4f}\nMale: {odds_df["male_odds"].mean(1).to_list()[cluster]:.4f}\nRatio: {odds_df["fmratio_odds"].mean(1).to_list()[cluster]:.4f}', horizontalalignment='center', verticalalignment='center', fontsize=20)
+        ax[f'label{cluster_order.index(cluster)}'].axis('off')
+
+    ax['dmn0'].set_ylabel('Default Mode Network')
+    ax['smn0'].set_ylabel('Somatomotor Network')
+
+    plt.tight_layout()
+    plt.savefig(os.path.join(analysisdir, 'figures', f'{argv.num_clusters}means_clustering_fmratio.png'))
+    plt.close()
+
     # plot roc
-    fig, ax = plt.subplots(figsize=(10,8))
+    fig, ax = plt.subplots(figsize=(7,7))
+    ax.set_aspect('equal', adjustable='box')
     for k in range(argv.k_fold):
         fpr, tpr, thresholds = roc_curve(samples['true'][k], samples['prob'][k][:,1])
         ax.plot(fpr, tpr, label=f'Fold {k+1}', linewidth=3.0)
     ax.plot(np.linspace(0, 1, 100), np.linspace(0,1,100), linestyle='--', linewidth=3.0)
-    plt.ylabel('True positive rate')
-    plt.xlabel('False positive rate')
-    plt.legend()
+    ax.set_ylabel('True positive rate')
+    ax.set_xlabel('False positive rate')
+    ax.set_ylim([0.0, 1.0])
+    ax.set_xlim([0.0, 1.0])
+    ax.set_title('Receiver operating characteristic curve')
+    if argv.k_fold>1: plt.legend()
+    plt.tight_layout()
     plt.savefig(os.path.join(analysisdir, 'figures', 'roc_curve.png'))
     plt.close()
 
@@ -618,11 +666,17 @@ def analyze_task(argv):
                 plot_nifti(node_attention, roi, os.path.join(analysisdir, 'node_attention', task, 'nifti'), topk=topk, prefix=f'layer{layer+1}/c{contrast}')
 
 
-
 def analyze(argv):
     assert argv.roi == 'schaefer'
-    if argv.dataset == 'rest': analyze_rest(argv)
-    elif argv.dataset == 'task': analyze_task(argv)
+
+    # set seed
+    torch.manual_seed(argv.seed)
+    np.random.seed(argv.seed)
+    random.seed(argv.seed)
+    if torch.cuda.is_available(): torch.cuda.manual_seed_all(argv.seed)
+
+    if 'rest' in argv.dataset: analyze_rest(argv)
+    elif 'task' in argv.dataset: analyze_task(argv)
     else: raise
 
 
