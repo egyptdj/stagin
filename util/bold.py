@@ -3,32 +3,40 @@ import numpy as np
 from random import randrange
 
 
-def process_dynamic_fc(timeseries, window_size, window_stride, dynamic_length=None, sampling_init=None, self_loop=True):
+def get_fc(timeseries, sampling_point, window_size, self_loop):
+    fc = corrcoef(timeseries[sampling_point:sampling_point+window_size].T)
+    if not self_loop: fc-= torch.eye(fc.shape[0])
+    return fc
+
+def get_minibatch_fc(minibatch_timeseries, sampling_point, window_size, self_loop):
+    fc_list = []
+    for timeseries in minibatch_timeseries:
+        fc = get_fc(timeseries, sampling_point, window_size, self_loop)
+        fc_list.append(fc)
+    return torch.stack(fc_list)
+
+
+def process_dynamic_fc(minibatch_timeseries, window_size, window_stride, dynamic_length=None, sampling_init=None, self_loop=True):
     # assumes input shape [minibatch x time x node]
     # output shape [minibatch x time x node x node]
     if dynamic_length is None:
-        dynamic_length = timeseries.shape[1]
+        dynamic_length = minibatch_timeseries.shape[1]
         sampling_init = 0
     else:
         if isinstance(sampling_init, int):
-            assert timeseries.shape[1] > sampling_init + dynamic_length
+            assert minibatch_timeseries.shape[1] > sampling_init + dynamic_length
     assert sampling_init is None or isinstance(sampling_init, int)
-    assert timeseries.ndim==3
+    assert minibatch_timeseries.ndim==3
     assert dynamic_length > window_size
 
     if sampling_init is None:
-        sampling_init = randrange(timeseries.shape[1]-dynamic_length+1)
+        sampling_init = randrange(minibatch_timeseries.shape[1]-dynamic_length+1)
     sampling_points = list(range(sampling_init, sampling_init+dynamic_length-window_size, window_stride))
 
-    dynamic_fc_list = []
-    for i in sampling_points:
-        fc_list = []
-        for _t in timeseries:
-            fc = corrcoef(_t[i:i+window_size].T)
-            if not self_loop: fc -= torch.eye(fc.shape[0])
-            fc_list.append(fc)
-        dynamic_fc_list.append(torch.stack(fc_list))
-    return torch.stack(dynamic_fc_list, dim=1), sampling_points
+    minibatch_fc_list = [get_minibatch_fc(minibatch_timeseries, sampling_point, window_size, self_loop) for sampling_point in sampling_points]
+    dynamic_fc = torch.stack(minibatch_fc_list, dim=1)
+
+    return dynamic_fc, sampling_points
 
 
 # corrcoef based on
