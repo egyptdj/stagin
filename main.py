@@ -8,7 +8,8 @@ if __name__=='__main__':
     argv = util.option.parse()
 
     # run and analyze experiment
-    if not argv.no_train: train(argv)
-    if not argv.no_test: test(argv)
-    if not argv.no_analysis and argv.roi=='schaefer': analyze(argv)
+    if not any([argv.train, argv.test, argv.analyze]): argv.train = argv.test = argv.analyze = True
+    if argv.train: train(argv)
+    if argv.test: test(argv)
+    if argv.analyze: analyze(argv)
     exit(0)
