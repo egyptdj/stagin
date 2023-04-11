@@ -179,6 +179,7 @@ class ModelSTAGIN(nn.Module):
             attention['time-attention'].append(time_attn)
             latent_list.append(latent)
 
+        logit = logit.squeeze(1)
         attention['node-attention'] = torch.stack(attention['node-attention'], dim=1).detach().cpu()
         attention['time-attention'] = torch.stack(attention['time-attention'], dim=1).detach().cpu()
         latent = torch.stack(latent_list, dim=1)
