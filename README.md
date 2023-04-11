@@ -113,8 +113,8 @@ For brainplot:
 
 
 ### Updates
-- 2022-04-29 `5c262d8d`: Top k-percentile values from the adjacency matrix is now calculated without the need for calling .detach().cpu().numpy() which improves computation speed.
-
+- 2022-04-29 `5c262d8d`: Top k-percentile values from the adjacency matrix is now calculated without the need for calling `.detach().cpu().numpy()` which improves computation speed.
+- 2023-04-11 [`2aa53b9`](https://github.com/egyptdj/stagin/commit/2aa53b950874c7a6bacc97556b5b66e1785d4cc3)-[`40e2bc6`](https://github.com/egyptdj/stagin/commit/40e2bc6e818fe3af7ed61bc24d16fb601dde5e35): Added dataset classes for ukb-rest, abide, and fmriprep; Implemented regression experiments.
 
 ### Contact
 egyptdj@yonsei.ac.kr
