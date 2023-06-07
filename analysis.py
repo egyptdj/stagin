@@ -9,7 +9,7 @@ import seaborn as sns
 from copy import deepcopy
 from tqdm import tqdm
 from util import bold, option
-from dataset import DatasetHCPRest, DatasetUKBRest
+from dataset import DatasetHCPRest, DatasetUKBRest, DatasetABIDE
 from torch import save, load
 from torch.utils.data import DataLoader
 from sklearn.cluster import KMeans
@@ -147,6 +147,7 @@ def analyze_rest(argv):
         os.makedirs(os.path.join(analysisdir, 'time_attention', f'{argv.num_clusters}_means_clustering', 'figure'), exist_ok=True)
         if argv.dataset=='hcp-rest': dataset = DatasetHCPRest(argv.sourcedir, roi=argv.roi, k_fold=argv.k_fold)
         elif argv.dataset=='ukb-rest': dataset = DatasetUKBRest(argv.sourcedir, roi=argv.roi, k_fold=argv.k_fold, target_feature=argv.target_feature)
+        elif argv.dataset == 'abide-rest': dataset = DatasetABIDE(argv.sourcedir, roi=argv.roi, k_fold=argv.k_fold, target_feature=argv.target_feature)
         else: raise
         subsample_a_list = []
         for k in range(argv.k_fold):
@@ -232,6 +233,7 @@ def analyze_rest(argv):
         os.makedirs(os.path.join(analysisdir, 'time_attention', f'{argv.num_clusters}_means_clustering', 'summary'), exist_ok=True)
         if argv.dataset=='hcp-rest': dataset = DatasetHCPRest(argv.sourcedir, roi=argv.roi, k_fold=argv.k_fold)
         elif argv.dataset=='ukb-rest': dataset = DatasetUKBRest(argv.sourcedir, roi=argv.roi, k_fold=argv.k_fold, target_feature=argv.target_feature)
+        elif argv.dataset == 'abide-rest': dataset = DatasetABIDE(argv.sourcedir, roi=argv.roi, k_fold=argv.k_fold, target_feature=argv.target_feature)
         else: raise
         significant_clusters = {}
         for layer in range(argv.num_layers):

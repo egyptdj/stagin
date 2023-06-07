@@ -243,7 +243,7 @@ class DatasetUKBRest(torch.utils.data.Dataset):
 class DatasetABIDE(torch.utils.data.Dataset):
     def __init__(self, sourcedir, roi, k_fold=None, dynamic_length=None, target_feature='DX_GROUP', smoothing_fwhm=None, abide_dir='/mnt/workdisk2/nilearn_data'):
         super().__init__()
-        abide = datasets.fetch_abide_pcp(abide_dir)
+        abide = datasets.fetch_abide_pcp(data_dir=abide_dir)
 
         self.filename = 'abide'
         self.filename += f'_roi-{roi}'
