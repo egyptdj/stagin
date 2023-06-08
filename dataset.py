@@ -257,12 +257,12 @@ class DatasetABIDE(torch.utils.data.Dataset):
         if os.path.isfile(os.path.join(sourcedir, f'{self.filename}.pth')):
             self.timeseries_dict = torch.load(os.path.join(sourcedir, f'{self.filename}.pth'))
         else:
-            roi_masker = NiftiLabelsMasker(torch.load_img(self.roi['maps']))
+            roi_masker = maskers.NiftiLabelsMasker(image.load_img(self.roi['maps']))
             self.timeseries_dict = {}
             img_list = abide['func_preproc']
             for img in tqdm(img_list, ncols=60):
                 id = img.rstrip('_func_preproc.nii.gz')[-5:]
-                timeseries = roi_masker.fit_transform(torch.load_img(img))
+                timeseries = roi_masker.fit_transform(image.load_img(img))
                 # if not len(timeseries) == 1200: continue
                 self.timeseries_dict[id] = timeseries
             torch.save(self.timeseries_dict, os.path.join(sourcedir, f'{self.filename}.pth'))
