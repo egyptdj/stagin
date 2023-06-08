@@ -241,7 +241,7 @@ class DatasetUKBRest(torch.utils.data.Dataset):
 
 
 class DatasetABIDE(torch.utils.data.Dataset):
-    def __init__(self, sourcedir, roi, k_fold=None, dynamic_length=None, target_feature='DX_GROUP', smoothing_fwhm=None, abide_dir='/mnt/workdisk2/nilearn_data'):
+    def __init__(self, sourcedir, roi, k_fold=None, dynamic_length=None, target_feature='DX_GROUP', smoothing_fwhm=None, abide_dir='./'):
         super().__init__()
         abide = datasets.fetch_abide_pcp(data_dir=abide_dir)
 
@@ -249,10 +249,10 @@ class DatasetABIDE(torch.utils.data.Dataset):
         self.filename += f'_roi-{roi}'
         if smoothing_fwhm is not None: self.filename += f'_fwhm-{smoothing_fwhm}'
 
-        if roi=='schaefer': self.roi = fetch_atlas_schaefer_2018(data_dir=os.path.join(sourcedir, 'roi'))
-        elif roi=='aal': self.roi = fetch_atlas_aal(data_dir=os.path.join(sourcedir, 'roi'))
-        elif roi=='destrieux': self.roi = fetch_atlas_destrieux_2009(data_dir=os.path.join(sourcedir, 'roi'))
-        elif roi=='harvard_oxford': self.roi = fetch_atlas_harvard_oxford(atlas_name='cort-maxprob-thr25-2mm', data_dir=os.path.join(sourcedir, 'roi'))
+        if roi=='schaefer': self.roi = datasets.fetch_atlas_schaefer_2018(data_dir=os.path.join(sourcedir, 'roi'))
+        elif roi=='aal': self.roi = datasets.fetch_atlas_aal(data_dir=os.path.join(sourcedir, 'roi'))
+        elif roi=='destrieux': self.roi = datasets.fetch_atlas_destrieux_2009(data_dir=os.path.join(sourcedir, 'roi'))
+        elif roi=='harvard_oxford': self.roi = datasets.fetch_atlas_harvard_oxford(atlas_name='cort-maxprob-thr25-2mm', data_dir=os.path.join(sourcedir, 'roi'))
 
         if os.path.isfile(os.path.join(sourcedir, f'{self.filename}.pth')):
             self.timeseries_dict = torch.load(os.path.join(sourcedir, f'{self.filename}.pth'))

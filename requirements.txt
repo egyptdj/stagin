@@ -1,0 +1,14 @@
+einops==0.4.1
+joblib==1.1.0
+matplotlib==3.5.2
+nilearn==0.9.2
+nipy==0.5.0
+numpy==1.22.3
+pandas==1.4.3
+pingouin==0.5.3
+python-telegram-bot==20.3
+scikit_learn==1.0.2
+seaborn==0.11.2
+torch==1.12.1
+torchvision==0.13.1
+tqdm==4.63.0
