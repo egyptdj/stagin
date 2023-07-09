@@ -241,7 +241,7 @@ class DatasetUKBRest(torch.utils.data.Dataset):
 
 
 class DatasetABIDE(torch.utils.data.Dataset):
-    def __init__(self, sourcedir, roi, k_fold=None, dynamic_length=None, target_feature='DX_GROUP', smoothing_fwhm=None, abide_dir='/mnt/workdisk2/nilearn_data'):
+    def __init__(self, sourcedir, roi, k_fold=None, dynamic_length=None, target_feature='DX_GROUP', smoothing_fwhm=None, abide_dir='./abide'):
         super().__init__()
         abide = datasets.fetch_abide_pcp(abide_dir)
 
@@ -249,20 +249,20 @@ class DatasetABIDE(torch.utils.data.Dataset):
         self.filename += f'_roi-{roi}'
         if smoothing_fwhm is not None: self.filename += f'_fwhm-{smoothing_fwhm}'
 
-        if roi=='schaefer': self.roi = fetch_atlas_schaefer_2018(data_dir=os.path.join(sourcedir, 'roi'))
-        elif roi=='aal': self.roi = fetch_atlas_aal(data_dir=os.path.join(sourcedir, 'roi'))
-        elif roi=='destrieux': self.roi = fetch_atlas_destrieux_2009(data_dir=os.path.join(sourcedir, 'roi'))
-        elif roi=='harvard_oxford': self.roi = fetch_atlas_harvard_oxford(atlas_name='cort-maxprob-thr25-2mm', data_dir=os.path.join(sourcedir, 'roi'))
+        if roi=='schaefer': self.roi = datasets.fetch_atlas_schaefer_2018(data_dir=os.path.join(sourcedir, 'roi'))
+        elif roi=='aal': self.roi = datasets.fetch_atlas_aal(data_dir=os.path.join(sourcedir, 'roi'))
+        elif roi=='destrieux': self.roi = datasets.fetch_atlas_destrieux_2009(data_dir=os.path.join(sourcedir, 'roi'))
+        elif roi=='harvard_oxford': self.roi = datasets.fetch_atlas_harvard_oxford(atlas_name='cort-maxprob-thr25-2mm', data_dir=os.path.join(sourcedir, 'roi'))
 
         if os.path.isfile(os.path.join(sourcedir, f'{self.filename}.pth')):
             self.timeseries_dict = torch.load(os.path.join(sourcedir, f'{self.filename}.pth'))
         else:
-            roi_masker = NiftiLabelsMasker(torch.load_img(self.roi['maps']))
+            roi_masker = maskers.NiftiLabelsMasker(image.load_img(self.roi['maps']))
             self.timeseries_dict = {}
             img_list = abide['func_preproc']
             for img in tqdm(img_list, ncols=60):
                 id = img.rstrip('_func_preproc.nii.gz')[-5:]
-                timeseries = roi_masker.fit_transform(torch.load_img(img))
+                timeseries = roi_masker.fit_transform(image.load_img(img))
                 # if not len(timeseries) == 1200: continue
                 self.timeseries_dict[id] = timeseries
             torch.save(self.timeseries_dict, os.path.join(sourcedir, f'{self.filename}.pth'))
@@ -306,6 +306,8 @@ class DatasetABIDE(torch.utils.data.Dataset):
     def __getitem__(self, idx):
         subject = self.subject_list[idx]
         timeseries = self.timeseries_dict[subject]
+        assert len(timeseries) >= self.dynamic_length, f'timeseries length {len(timeseries)} is shorter than the dynamic_length {self.dynamic_length}'
+
         timeseries = (timeseries - np.mean(timeseries, axis=0, keepdims=True)) / (np.std(timeseries, axis=0, keepdims=True) + 1e-9)
         if not self.dynamic_length is None:
             if self.train:
@@ -319,7 +321,7 @@ class DatasetABIDE(torch.utils.data.Dataset):
 
 
 class DatasetFMRIPREP(torch.utils.data.Dataset):
-    def __init__(self, sourcedir, roi, k_fold=None, task='rest', target_feature='Gender', smoothing_fwhm=None, regression=True, prefix='', num_samples=-1):
+    def __init__(self, sourcedir, roi, k_fold=None, task='rest', dynamic_length=None, target_feature='Gender', smoothing_fwhm=None, regression=True, prefix='', num_samples=-1):
         super().__init__()
         assert isinstance(prefix, str)
         self.filename = f'{prefix}-fmriprep-rest'
@@ -368,6 +370,8 @@ class DatasetFMRIPREP(torch.utils.data.Dataset):
                 self.full_subject_list.remove(subject)
         self.full_label_list = [self.behavioral_dict[subject] for subject in self.full_subject_list]
         
+        self.dynamic_length = dynamic_length
+        
 
     def __len__(self):
         return len(self.subject_list) if self.k is not None else len(self.full_subject_list)
@@ -385,7 +389,15 @@ class DatasetFMRIPREP(torch.utils.data.Dataset):
     def __getitem__(self, idx):
         subject = self.subject_list[idx]
         timeseries = self.timeseries_dict[subject]
+        assert len(timeseries) >= self.dynamic_length, f'timeseries length {len(timeseries)} is shorter than the dynamic_length {self.dynamic_length}'        
+        
         timeseries = (timeseries - np.mean(timeseries, axis=0, keepdims=True)) / (np.std(timeseries, axis=0, keepdims=True) + 1e-9)
+        
+        if not self.dynamic_length is None:
+        if self.train:
+            sampling_init = randrange(len(timeseries)-self.dynamic_length)
+            timeseries = timeseries[sampling_init:sampling_init+self.dynamic_length]
+
         label = self.behavioral_dict[subject]
         label = self.label_encoder.transform([label])[0]
 

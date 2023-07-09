@@ -13,7 +13,7 @@ def parse():
     parser.add_argument('-ds', '--sourcedir', type=str, default='./data')
     parser.add_argument('-dt', '--targetdir', type=str, default='./result')
 
-    parser.add_argument('--dataset', type=str, default='hcp-rest', choices=['hcp-rest', 'hcp-task', 'ukb-rest', 'abide-rest', 'ucla-rest'])
+    parser.add_argument('--dataset', type=str, default='hcp-rest', choices=['hcp-rest', 'hcp-task', 'ukb-rest', 'abide-rest', 'ucla-rest', 'cobre-rest'])
     parser.add_argument('--target_feature', type=str, default='Gender')
     parser.add_argument('--roi', type=str, default='schaefer', choices=['scahefer', 'aal', 'destrieux', 'harvard_oxford'])
     parser.add_argument('--fwhm', type=float, default=None)
