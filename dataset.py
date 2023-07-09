@@ -241,9 +241,8 @@ class DatasetUKBRest(torch.utils.data.Dataset):
 
 
 class DatasetABIDE(torch.utils.data.Dataset):
-    def __init__(self, sourcedir, roi, k_fold=None, dynamic_length=None, target_feature='DX_GROUP', smoothing_fwhm=None, abide_dir='./abide'):
+    def __init__(self, sourcedir, roi, k_fold=None, dynamic_length=None, target_feature='DX_GROUP', smoothing_fwhm=None):
         super().__init__()
-        abide = datasets.fetch_abide_pcp(abide_dir)
 
         self.filename = 'abide'
         self.filename += f'_roi-{roi}'
@@ -254,9 +253,11 @@ class DatasetABIDE(torch.utils.data.Dataset):
         elif roi=='destrieux': self.roi = datasets.fetch_atlas_destrieux_2009(data_dir=os.path.join(sourcedir, 'roi'))
         elif roi=='harvard_oxford': self.roi = datasets.fetch_atlas_harvard_oxford(atlas_name='cort-maxprob-thr25-2mm', data_dir=os.path.join(sourcedir, 'roi'))
 
-        if os.path.isfile(os.path.join(sourcedir, f'{self.filename}.pth')):
-            self.timeseries_dict = torch.load(os.path.join(sourcedir, f'{self.filename}.pth'))
+        if os.path.isfile(os.path.join(sourcedir, 'abide', f'{self.filename}.pth')):
+            self.timeseries_dict = torch.load(os.path.join(sourcedir, 'abide', f'{self.filename}.pth'))
+            behavioral_df = pd.read_csv(os.path.join(sourcedir, 'abide', 'participants.tsv'), delimiter='\t').set_index('subject')[target_feature]
         else:
+            abide = datasets.fetch_abide_pcp(os.path.join(sourcedir, 'abide'))
             roi_masker = maskers.NiftiLabelsMasker(image.load_img(self.roi['maps']))
             self.timeseries_dict = {}
             img_list = abide['func_preproc']
@@ -265,7 +266,10 @@ class DatasetABIDE(torch.utils.data.Dataset):
                 timeseries = roi_masker.fit_transform(image.load_img(img))
                 # if not len(timeseries) == 1200: continue
                 self.timeseries_dict[id] = timeseries
-            torch.save(self.timeseries_dict, os.path.join(sourcedir, f'{self.filename}.pth'))
+            torch.save(self.timeseries_dict, os.path.join(sourcedir, 'abide', f'{self.filename}.pth'))
+            behavioral_df = pd.DataFrame(abide['phenotypic']).set_index('subject')
+            behavioral_df.to_csv(os.path.join(sourcedir, 'abide', 'participants.tsv'), sep='\t')
+            behavioral_df = behavioral_df[target_feature]
 
         _, self.num_nodes = list(self.timeseries_dict.values())[0].shape
         self.full_subject_list = list(self.timeseries_dict.keys())
@@ -276,7 +280,6 @@ class DatasetABIDE(torch.utils.data.Dataset):
             self.subject_list = self.full_subject_list
         self.k = None
 
-        behavioral_df = pd.DataFrame(abide['phenotypic']).set_index('subject')[target_feature]
         self.num_classes = len(behavioral_df.unique())
         self.behavioral_dict = behavioral_df.to_dict()
         self.full_label_list = [self.behavioral_dict[int(subject)] for subject in self.full_subject_list]
@@ -306,11 +309,11 @@ class DatasetABIDE(torch.utils.data.Dataset):
     def __getitem__(self, idx):
         subject = self.subject_list[idx]
         timeseries = self.timeseries_dict[subject]
-        assert len(timeseries) >= self.dynamic_length, f'timeseries length {len(timeseries)} is shorter than the dynamic_length {self.dynamic_length}'
 
         timeseries = (timeseries - np.mean(timeseries, axis=0, keepdims=True)) / (np.std(timeseries, axis=0, keepdims=True) + 1e-9)
         if not self.dynamic_length is None:
             if self.train:
+                assert len(timeseries) >= self.dynamic_length, f'timeseries length {len(timeseries)} is shorter than the dynamic_length {self.dynamic_length}'
                 sampling_init = randrange(len(timeseries)-self.dynamic_length)
                 timeseries = timeseries[sampling_init:sampling_init+self.dynamic_length]
 
@@ -389,14 +392,14 @@ class DatasetFMRIPREP(torch.utils.data.Dataset):
     def __getitem__(self, idx):
         subject = self.subject_list[idx]
         timeseries = self.timeseries_dict[subject]
-        assert len(timeseries) >= self.dynamic_length, f'timeseries length {len(timeseries)} is shorter than the dynamic_length {self.dynamic_length}'        
         
         timeseries = (timeseries - np.mean(timeseries, axis=0, keepdims=True)) / (np.std(timeseries, axis=0, keepdims=True) + 1e-9)
         
         if not self.dynamic_length is None:
-        if self.train:
-            sampling_init = randrange(len(timeseries)-self.dynamic_length)
-            timeseries = timeseries[sampling_init:sampling_init+self.dynamic_length]
+            if self.train:
+                assert len(timeseries) >= self.dynamic_length, f'timeseries length {len(timeseries)} is shorter than the dynamic_length {self.dynamic_length}'        
+                sampling_init = randrange(len(timeseries)-self.dynamic_length)
+                timeseries = timeseries[sampling_init:sampling_init+self.dynamic_length]
 
         label = self.behavioral_dict[subject]
         label = self.label_encoder.transform([label])[0]

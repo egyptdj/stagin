@@ -214,6 +214,8 @@ def test(argv):
     elif argv.dataset=='ukb-rest': dataset = DatasetUKBRest(argv.sourcedir, roi=argv.roi, k_fold=argv.k_fold, target_feature=argv.target_feature, smoothing_fwhm=argv.fwhm, regression=argv.regression, num_samples=argv.num_samples)
     elif argv.dataset=='ucla-rest': dataset = DatasetFMRIPREP(argv.sourcedir, roi=argv.roi, k_fold=argv.k_fold, target_feature=argv.target_feature, smoothing_fwhm=argv.fwhm, regression=argv.regression, num_samples=argv.num_samples, prefix='ucla')
     elif argv.dataset=='cobre-rest': dataset = DatasetFMRIPREP(argv.sourcedir, roi=argv.roi, k_fold=argv.k_fold, target_feature=argv.target_feature, smoothing_fwhm=argv.fwhm, regression=argv.regression, num_samples=argv.num_samples, prefix='cobre')    
+    elif argv.dataset=='abide-rest': dataset = DatasetABIDE(argv.sourcedir, roi=argv.roi, k_fold=argv.k_fold, target_feature=argv.target_feature, smoothing_fwhm=argv.fwhm)
+
     else: raise
     dataloader = torch.utils.data.DataLoader(dataset, batch_size=1, shuffle=False, num_workers=argv.num_workers, pin_memory=True)
     logger = util.logger.LoggerSTAGIN(argv.k_fold, dataset.num_classes)
@@ -294,7 +296,8 @@ def test(argv):
         # finalize fold
         logger.to_csv(argv.targetdir, k)
         if 'rest' in argv.dataset:
-            [np.save(os.path.join(argv.targetdir, 'attention', str(k), f'{key}.npy'), np.concatenate(value)) for key, value in fold_attention.items()]
+            for key, value in fold_attention.items():
+                torch.save(value, os.path.join(argv.targetdir, 'attention', str(k), f'{key}.pth'))
         elif 'task' in argv.dataset:
             for key, value in fold_attention.items():
                 os.makedirs(os.path.join(argv.targetdir, 'attention', str(k), key), exist_ok=True)
