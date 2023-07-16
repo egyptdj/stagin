@@ -71,10 +71,13 @@ def train(argv):
             'scheduler': None}
 
     # start experiment
-    for k in range(checkpoint['fold'], argv.k_fold):
+    for k_index, k in enumerate(dataset.folds):
+        if checkpoint['fold']:
+            if k_index < dataset.folds.index(checkpoint['fold']):
+                continue
         # make directories per fold
         os.makedirs(os.path.join(argv.targetdir, 'model', str(k)), exist_ok=True)
-
+        
         # set dataloader
         dataset.set_fold(k, train=True)
 
@@ -103,7 +106,7 @@ def train(argv):
         # define logging objects
         summary_writer = SummaryWriter(os.path.join(argv.targetdir, 'summary', str(k), 'train'), )
         summary_writer_val = SummaryWriter(os.path.join(argv.targetdir, 'summary', str(k), 'val'), )
-        logger = util.logger.LoggerSTAGIN(argv.k_fold, dataset.num_classes)
+        logger = util.logger.LoggerSTAGIN(dataset.folds, dataset.num_classes)
 
         # start training
         for epoch in range(checkpoint['epoch'], argv.num_epochs):
@@ -150,7 +153,6 @@ def train(argv):
             [summary_writer.add_scalar(key, value, epoch) for key, value in metrics.items() if not key=='fold']
             [summary_writer.add_image(key, make_grid(value[-1].unsqueeze(1), normalize=True, scale_each=True), epoch) for key, value in attention.items()]
             summary_writer.flush()
-            print(metrics)
 
             # save checkpoint
             torch.save({
@@ -162,6 +164,7 @@ def train(argv):
                 os.path.join(argv.targetdir, 'checkpoint.pth'))
 
             if argv.validate:
+                print('validating. not for testing purposes')
                 logger.initialize(k)
                 dataset.set_fold(k, train=False)
                 for i, x in enumerate(dataloader):
@@ -192,8 +195,15 @@ def train(argv):
                         pred = logit.argmax(1) if dataset.num_classes > 1 else logit
                         prob = logit.softmax(1) if dataset.num_classes > 1 else logit
                         logger.add(k=k, pred=pred.detach().cpu().numpy(), true=label.detach().cpu().numpy(), prob=prob.detach().cpu().numpy())
+                samples = logger.get(k)
                 metrics = logger.evaluate(k)
-                print(metrics)
+                summary_writer_val.add_scalar('loss', loss_accumulate/len(dataloader), epoch)
+                summary_writer_val.add_scalar('reg_ortho', reg_ortho_accumulate/len(dataloader), epoch)
+                if dataset.num_classes > 1: summary_writer_val.add_pr_curve('precision-recall', samples['true'], samples['prob'][:,1], epoch)
+                [summary_writer_val.add_scalar(key, value, epoch) for key, value in metrics.items() if not key=='fold']
+                [summary_writer_val.add_image(key, make_grid(value[-1].unsqueeze(1), normalize=True, scale_each=True), epoch) for key, value in attention.items()]
+                summary_writer_val.flush()
+
 
         # finalize fold
         torch.save(model.state_dict(), os.path.join(argv.targetdir, 'model', str(k), 'model.pth'))
@@ -218,9 +228,9 @@ def test(argv):
 
     else: raise
     dataloader = torch.utils.data.DataLoader(dataset, batch_size=1, shuffle=False, num_workers=argv.num_workers, pin_memory=True)
-    logger = util.logger.LoggerSTAGIN(argv.k_fold, dataset.num_classes)
+    logger = util.logger.LoggerSTAGIN(dataset.folds, dataset.num_classes)
 
-    for k in range(argv.k_fold):
+    for k in dataset.folds:
         os.makedirs(os.path.join(argv.targetdir, 'attention', str(k)), exist_ok=True)
 
         model = ModelSTAGIN(
@@ -291,7 +301,6 @@ def test(argv):
         [summary_writer.add_scalar(key, value) for key, value in metrics.items() if not key=='fold']
         [summary_writer.add_image(key, make_grid(value[-1].unsqueeze(1), normalize=True, scale_each=True)) for key, value in attention.items()]
         summary_writer.flush()
-        print(metrics)
 
         # finalize fold
         logger.to_csv(argv.targetdir, k)
@@ -312,6 +321,5 @@ def test(argv):
     # finalize experiment
     logger.to_csv(argv.targetdir)
     final_metrics = logger.evaluate()
-    print(final_metrics)
     summary_writer.close()
     torch.save(logger.get(), os.path.join(argv.targetdir, 'samples.pkl'))
