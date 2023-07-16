@@ -7,7 +7,7 @@ def parse():
     parser = argparse.ArgumentParser(description='SPATIO-TEMPORAL-ATTENTION-GRAPH-ISOMORPHISM-NETWORK')
     parser.add_argument('-s', '--seed', type=int, default=0)
     parser.add_argument('-n', '--exp_name', type=str, default='stagin_experiment')
-    parser.add_argument('-k', '--k_fold', type=int, default=5)
+    parser.add_argument('-k', '--k_fold', default=5)
     parser.add_argument('-b', '--minibatch_size', type=int, default=3)
 
     parser.add_argument('-ds', '--sourcedir', type=str, default='./data')

@@ -43,16 +43,28 @@ class DatasetHCPRest(torch.utils.data.Dataset):
         if 0 < num_samples < len(self.full_subject_list):
             self.full_subject_list = choices(self.full_subject_list, k=num_samples)
 
-        if k_fold > 1:
-            self.k_fold = StratifiedKFold(k_fold, shuffle=True, random_state=0)
-        else:
-            self.k_fold = None
-            self.subject_list = self.full_subject_list
+        behavioral_df = pd.read_csv(os.path.join(sourcedir, 'behavioral', 'hcp.csv')).set_index('Subject')
+
+        if isinstance(k_fold, int):
+            self.folds = list(range(k_fold))
+            if k_fold > 1:
+                self.k_fold = StratifiedKFold(k_fold, shuffle=True, random_state=0)
+            else:
+                self.k_fold = None
+                self.subject_list = self.full_subject_list
+        elif isinstance(k_fold, str):
+            self.folds = list(behavioral_df[k_fold].unique())
+            self.k_fold = {}
+            for fold in self.folds:
+                self.k_fold[fold] = [
+                    [behavioral_df.index.to_list().index(i) for i in behavioral_df.loc[behavioral_df[k_fold]!=fold].index], 
+                    [behavioral_df.index.to_list().index(i) for i in behavioral_df.loc[behavioral_df[k_fold]==fold].index]
+                ]
+      
         self.k = None
 
-        behavioral_df = pd.read_csv(os.path.join(sourcedir, 'behavioral', 'hcp.csv')).set_index('Subject')[target_feature]
-        self.num_classes = 1 if regression else len(behavioral_df.unique())
-        self.behavioral_dict = behavioral_df.to_dict()
+        self.num_classes = 1 if regression else len(behavioral_df[target_feature].unique())
+        self.behavioral_dict = behavioral_df[target_feature].to_dict()
         self.full_label_list = [self.behavioral_dict[int(subject)] for subject in self.full_subject_list]
 
 
@@ -63,9 +75,19 @@ class DatasetHCPRest(torch.utils.data.Dataset):
     def set_fold(self, fold, train=True):
         if not self.k_fold:
             return
+        
         self.k = fold
-        train_idx, test_idx = list(self.k_fold.split(self.full_subject_list, self.full_label_list))[fold]
-        if train: shuffle(train_idx)
+        if isinstance(fold, int):
+            train_idx, test_idx = list(self.k_fold.split(self.full_subject_list, self.full_label_list))[fold]
+        elif isinstance(fold, str):
+            train_idx, test_idx = self.k_fold[fold]
+            
+        if train:
+            shuffle(train_idx)
+            self.train = True
+        else:
+            self.train = False
+            
         self.subject_list = [self.full_subject_list[idx] for idx in train_idx] if train else [self.full_subject_list[idx] for idx in test_idx]
 
 
@@ -193,8 +215,8 @@ class DatasetUKBRest(torch.utils.data.Dataset):
         self.num_timepoints, self.num_nodes = list(self.timeseries_dict.values())[0].shape
         self.full_subject_list = list(self.timeseries_dict.keys())
 
-        behavioral_df = pd.read_csv(os.path.join(sourcedir, 'behavioral', 'ukb.csv')).set_index('eid')[target_feature]
-        self.behavioral_dict = behavioral_df.to_dict()
+        behavioral_df = pd.read_csv(os.path.join(sourcedir, 'behavioral', 'ukb.csv')).set_index('eid')
+        self.behavioral_dict = behavioral_df[target_feature].to_dict()
 
         for id, timeseries in self.timeseries_dict.items():
             if not len(timeseries) == 490:
@@ -207,11 +229,22 @@ class DatasetUKBRest(torch.utils.data.Dataset):
         if 0 < num_samples < len(self.full_subject_list):
             self.full_subject_list = choices(self.full_subject_list, k=num_samples)
 
-        if k_fold > 1:
-            self.k_fold = StratifiedKFold(k_fold, shuffle=True, random_state=0)
-        else:
-            self.k_fold = None
-            self.subject_list = self.full_subject_list
+        if isinstance(k_fold, int):
+            self.folds = list(range(k_fold))
+            if k_fold > 1:
+                self.k_fold = StratifiedKFold(k_fold, shuffle=True, random_state=0)
+            else:
+                self.k_fold = None
+                self.subject_list = self.full_subject_list
+        elif isinstance(k_fold, str):
+            self.folds = list(behavioral_df[k_fold].unique())
+            self.k_fold = {}
+            for fold in self.folds:
+                self.k_fold[fold] = [
+                    [behavioral_df.index.to_list().index(i) for i in behavioral_df.loc[behavioral_df[k_fold]!=fold].index], 
+                    [behavioral_df.index.to_list().index(i) for i in behavioral_df.loc[behavioral_df[k_fold]==fold].index]
+                ]
+            
         self.k = None
 
         self.full_label_list = [self.behavioral_dict[int(subject)] for subject in self.full_subject_list]
@@ -225,9 +258,19 @@ class DatasetUKBRest(torch.utils.data.Dataset):
     def set_fold(self, fold, train=True):
         if not self.k_fold:
             return
+        
         self.k = fold
-        train_idx, test_idx = list(self.k_fold.split(self.full_subject_list, self.full_label_list))[fold]
-        if train: shuffle(train_idx)
+        if isinstance(fold, int):
+            train_idx, test_idx = list(self.k_fold.split(self.full_subject_list, self.full_label_list))[fold]
+        elif isinstance(fold, str):
+            train_idx, test_idx = self.k_fold[fold]
+            
+        if train:
+            shuffle(train_idx)
+            self.train = True
+        else:
+            self.train = False
+
         self.subject_list = [self.full_subject_list[idx] for idx in train_idx] if train else [self.full_subject_list[idx] for idx in test_idx]
 
 
@@ -255,7 +298,7 @@ class DatasetABIDE(torch.utils.data.Dataset):
 
         if os.path.isfile(os.path.join(sourcedir, 'abide', f'{self.filename}.pth')):
             self.timeseries_dict = torch.load(os.path.join(sourcedir, 'abide', f'{self.filename}.pth'))
-            behavioral_df = pd.read_csv(os.path.join(sourcedir, 'abide', 'participants.tsv'), delimiter='\t').set_index('subject')[target_feature]
+            behavioral_df = pd.read_csv(os.path.join(sourcedir, 'abide', 'participants.tsv'), delimiter='\t').set_index('subject')
         else:
             abide = datasets.fetch_abide_pcp(os.path.join(sourcedir, 'abide'))
             roi_masker = maskers.NiftiLabelsMasker(image.load_img(self.roi['maps']))
@@ -269,19 +312,31 @@ class DatasetABIDE(torch.utils.data.Dataset):
             torch.save(self.timeseries_dict, os.path.join(sourcedir, 'abide', f'{self.filename}.pth'))
             behavioral_df = pd.DataFrame(abide['phenotypic']).set_index('subject')
             behavioral_df.to_csv(os.path.join(sourcedir, 'abide', 'participants.tsv'), sep='\t')
-            behavioral_df = behavioral_df[target_feature]
+            behavioral_df = behavioral_df
 
         _, self.num_nodes = list(self.timeseries_dict.values())[0].shape
         self.full_subject_list = list(self.timeseries_dict.keys())
-        if k_fold > 1:
-            self.k_fold = StratifiedKFold(k_fold, shuffle=True, random_state=0)
-        else:
-            self.k_fold = None
-            self.subject_list = self.full_subject_list
+        
+        if isinstance(k_fold, int):
+            self.folds = list(range(k_fold))
+            if k_fold > 1:
+                self.k_fold = StratifiedKFold(k_fold, shuffle=True, random_state=0)
+            else:
+                self.k_fold = None
+                self.subject_list = self.full_subject_list
+        elif isinstance(k_fold, str):
+            self.folds = list(behavioral_df[k_fold].unique())
+            self.k_fold = {}
+            for fold in self.folds:
+                self.k_fold[fold] = [
+                    [behavioral_df.index.to_list().index(i) for i in behavioral_df.loc[behavioral_df[k_fold]!=fold].index], 
+                    [behavioral_df.index.to_list().index(i) for i in behavioral_df.loc[behavioral_df[k_fold]==fold].index]
+                ]
+            
         self.k = None
 
-        self.num_classes = len(behavioral_df.unique())
-        self.behavioral_dict = behavioral_df.to_dict()
+        self.num_classes = len(behavioral_df[target_feature].unique())
+        self.behavioral_dict = behavioral_df[target_feature].to_dict()
         self.full_label_list = [self.behavioral_dict[int(subject)] for subject in self.full_subject_list]
 
         self.label_encoder = LabelEncoder()
@@ -296,13 +351,19 @@ class DatasetABIDE(torch.utils.data.Dataset):
     def set_fold(self, fold, train=True):
         if not self.k_fold:
             return
+        
         self.k = fold
-        train_idx, test_idx = list(self.k_fold.split(self.full_subject_list, self.full_label_list))[fold]
+        if isinstance(fold, int):
+            train_idx, test_idx = list(self.k_fold.split(self.full_subject_list, self.full_label_list))[fold]
+        elif isinstance(fold, str):
+            train_idx, test_idx = self.k_fold[fold]
+            
         if train:
             shuffle(train_idx)
             self.train = True
         else:
             self.train = False
+                
         self.subject_list = [self.full_subject_list[idx] for idx in train_idx] if train else [self.full_subject_list[idx] for idx in test_idx]
 
 
@@ -356,18 +417,30 @@ class DatasetFMRIPREP(torch.utils.data.Dataset):
         if 0 < num_samples < len(self.full_subject_list):
             self.full_subject_list = choices(self.full_subject_list, k=num_samples)
 
-        if k_fold > 1:
-            self.k_fold = StratifiedKFold(k_fold, shuffle=True, random_state=0)
-        else:
-            self.k_fold = None
-            self.subject_list = self.full_subject_list
+        behavioral_df = pd.read_csv(os.path.join(sourcedir, 'participants.tsv'), delimiter='\t').set_index('participant_id')
+
+        if isinstance(k_fold, int):
+            self.folds = list(range(k_fold))
+            if k_fold > 1:
+                self.k_fold = StratifiedKFold(k_fold, shuffle=True, random_state=0)
+            else:
+                self.k_fold = None
+                self.subject_list = self.full_subject_list
+        elif isinstance(k_fold, str):
+            self.folds = list(behavioral_df[k_fold].unique())
+            self.k_fold = {}
+            for fold in self.folds:
+                self.k_fold[fold] = [
+                    [behavioral_df.index.to_list().index(i) for i in behavioral_df.loc[behavioral_df[k_fold]!=fold].index], 
+                    [behavioral_df.index.to_list().index(i) for i in behavioral_df.loc[behavioral_df[k_fold]==fold].index]
+                ]
+            
         self.k = None
 
         self.label_encoder = LabelEncoder()
-        behavioral_df = pd.read_csv(os.path.join(sourcedir, 'participants.tsv'), delimiter='\t').set_index('participant_id')[target_feature]
-        self.label_encoder.fit(behavioral_df.unique())
-        self.num_classes = 1 if regression else len(behavioral_df.unique())
-        self.behavioral_dict = behavioral_df.to_dict()
+        self.label_encoder.fit(behavioral_df[target_feature].unique())
+        self.num_classes = 1 if regression else len(behavioral_df[target_feature].unique())
+        self.behavioral_dict = behavioral_df[target_feature].to_dict()
         for subject in self.timeseries_dict.keys():
             if not subject in self.behavioral_dict.keys():
                 self.full_subject_list.remove(subject)
@@ -384,8 +457,17 @@ class DatasetFMRIPREP(torch.utils.data.Dataset):
         if not self.k_fold:
             return
         self.k = fold
-        train_idx, test_idx = list(self.k_fold.split(self.full_subject_list, self.full_label_list))[fold]
-        if train: shuffle(train_idx)
+        if isinstance(fold, int):
+            train_idx, test_idx = list(self.k_fold.split(self.full_subject_list, self.full_label_list))[fold]
+        elif isinstance(fold, str):
+            train_idx, test_idx = self.k_fold[fold]
+            
+        if train:
+            shuffle(train_idx)
+            self.train = True
+        else:
+            self.train = False
+         
         self.subject_list = [self.full_subject_list[idx] for idx in train_idx] if train else [self.full_subject_list[idx] for idx in test_idx]
 
 

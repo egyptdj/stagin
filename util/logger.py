@@ -21,6 +21,13 @@ class LoggerSTAGIN(object):
 
     def _initialize_metric_dict(self):
         return {'pred':[], 'true':[], 'prob':[]}
+    
+    def _print_metric(self, metric):
+        assert isinstance(metric, dict)
+        spacer = len(max(metric, key=len))
+
+        for key, value in metric.items():
+            print(f"> {key:{spacer+1}}: {value}")
 
 
     def initialize(self, k=None):
@@ -29,7 +36,7 @@ class LoggerSTAGIN(object):
         else:
             if k is None:
                 self.samples = {}
-                for _k in range(self.k_fold):
+                for _k in self.k_fold:
                     self.samples[_k] = self._initialize_metric_dict()
             else:
                 self.samples[k] = self._initialize_metric_dict()
@@ -40,7 +47,7 @@ class LoggerSTAGIN(object):
             for sample, value in kwargs.items():
                 self.samples[sample].append(value)
         else:
-            assert k in list(range(self.k_fold))
+            assert k in self.k_fold
             for sample, value in kwargs.items():
                 self.samples[k][sample].append(value)
 
@@ -53,7 +60,7 @@ class LoggerSTAGIN(object):
         else:
             if k is None:
                 true, pred, prob = {}, {}, {}
-                for k in range(self.k_fold):
+                for k in self.k_fold:
                     true[k] = np.concatenate(self.samples[k]['true'])
                     pred[k] = np.concatenate(self.samples[k]['pred'])
                     prob[k] = np.concatenate(self.samples[k]['prob'])
@@ -68,16 +75,16 @@ class LoggerSTAGIN(object):
         return dict(true=true, pred=pred, prob=prob)
 
 
-    def evaluate(self, k=None, initialize=False, option='mean'):
+    def evaluate(self, k=None, initialize=False, option='mean', print=True):
         samples = self.get(k)
         if self.num_classes==1:
             if not self.k_fold is None and k is None:
                 if option=='mean': aggregate = np.mean
                 elif option=='std': aggregate = np.std
                 else: raise
-                explained_var = aggregate([metrics.explained_variance_score(samples['true'][k], samples['pred'][k]) for k in range(self.k_fold)])
-                r2 = aggregate([metrics.r2_score(samples['true'][k], samples['pred'][k]) for k in range(self.k_fold)])
-                mse = aggregate([metrics.mean_squared_error(samples['true'][k], samples['pred'][k]) for k in range(self.k_fold)])
+                explained_var = aggregate([metrics.explained_variance_score(samples['true'][k], samples['pred'][k]) for k in self.k_fold])
+                r2 = aggregate([metrics.r2_score(samples['true'][k], samples['pred'][k]) for k in self.k_fold])
+                mse = aggregate([metrics.mean_squared_error(samples['true'][k], samples['pred'][k]) for k in self.k_fold])
             else:
                 explained_var = metrics.explained_variance_score(samples['true'], samples['pred'])
                 r2 = metrics.r2_score(samples['true'], samples['pred'])
@@ -86,17 +93,21 @@ class LoggerSTAGIN(object):
             if initialize:
                 self.initialize(k)
                 
-            return dict(explained_var=explained_var, r2=r2, mse=mse)
+            metric = dict(explained_var=explained_var, r2=r2, mse=mse)
+                
+            if print: self._print_metric(metric)
+                
+            return metric
             
         elif self.num_classes>1:
             if not self.k_fold is None and k is None:
                 if option=='mean': aggregate = np.mean
                 elif option=='std': aggregate = np.std
                 else: raise
-                accuracy = aggregate([metrics.accuracy_score(samples['true'][k], samples['pred'][k]) for k in range(self.k_fold)])
-                precision = aggregate([metrics.precision_score(samples['true'][k], samples['pred'][k], average='binary' if self.num_classes==2 else 'micro') for k in range(self.k_fold)])
-                recall = aggregate([metrics.recall_score(samples['true'][k], samples['pred'][k], average='binary' if self.num_classes==2 else 'micro') for k in range(self.k_fold)])
-                roc_auc = aggregate([metrics.roc_auc_score(samples['true'][k], samples['prob'][k][:,1]) for k in range(self.k_fold)]) if self.num_classes==2 else np.mean([metrics.roc_auc_score(samples['true'][k], samples['prob'][k], average='macro', multi_class='ovr') for k in range(self.k_fold)])
+                accuracy = aggregate([metrics.accuracy_score(samples['true'][k], samples['pred'][k]) for k in self.k_fold])
+                precision = aggregate([metrics.precision_score(samples['true'][k], samples['pred'][k], average='binary' if self.num_classes==2 else 'micro') for k in self.k_fold])
+                recall = aggregate([metrics.recall_score(samples['true'][k], samples['pred'][k], average='binary' if self.num_classes==2 else 'micro') for k in self.k_fold])
+                roc_auc = aggregate([metrics.roc_auc_score(samples['true'][k], samples['prob'][k][:,1]) for k in self.k_fold]) if self.num_classes==2 else np.mean([metrics.roc_auc_score(samples['true'][k], samples['prob'][k], average='macro', multi_class='ovr') for k in self.k_fold])
             else:
                 accuracy = metrics.accuracy_score(samples['true'], samples['pred'])
                 precision = metrics.precision_score(samples['true'], samples['pred'], average='binary' if self.num_classes==2 else 'micro')
@@ -105,8 +116,12 @@ class LoggerSTAGIN(object):
     
             if initialize:
                 self.initialize(k)
+            
+            metric = dict(accuracy=accuracy, precision=precision, recall=recall, roc_auc=roc_auc)
     
-            return dict(accuracy=accuracy, precision=precision, recall=recall, roc_auc=roc_auc)
+            if print: self._print_metric(metric)
+
+            return metric
         
         else:
             raise
