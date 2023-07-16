@@ -14,19 +14,27 @@ from torch import save, load
 from torch.utils.data import DataLoader
 from sklearn.cluster import KMeans
 from sklearn.metrics import roc_curve
-from nilearn.image import load_img, new_img_like
-from nilearn.datasets import fetch_atlas_schaefer_2018
-from nipy.modalities.fmri.glm import GeneralLinearModel
+from nilearn import image, datasets, glm
 from pingouin import chi2_independence
+
+
+# def node_attention_glm(node_attention, design_matrix, contrast):
+#     from nipy.modalities.fmri.glm import GeneralLinearModel
+#     # [time, node] / [time, task] / [task]
+#     assert len(node_attention) == len(design_matrix)
+#     assert len(design_matrix.T) == len(contrast)
+#     model = GeneralLinearModel(design_matrix)
+#     model.fit(node_attention)
+#     return model.contrast(contrast)
 
 
 def node_attention_glm(node_attention, design_matrix, contrast):
     # [time, node] / [time, task] / [task]
     assert len(node_attention) == len(design_matrix)
     assert len(design_matrix.T) == len(contrast)
-    model = GeneralLinearModel(design_matrix)
-    model.fit(node_attention)
-    return model.contrast(contrast)
+    model = glm.OLSModel(design_matrix)
+    regression_result = model.fit(node_attention)
+    return glm.compute_contrast(contrast, regression_result)
 
 
 def time_attention_threshold(time_attention, std=1.0, consecutive_timepoint=3):
@@ -57,20 +65,20 @@ def plot_nifti(node_attention, roi, analysisdir, topk=0, prefix='', merge=False)
                 lh_roi_attention_array[roi_array==(i+1)] = attention
             else:
                 rh_roi_attention_array[roi_array==(i+1)] = attention
-        new_img_like(roi, lh_roi_attention_array, roi.affine).to_filename(os.path.join(analysisdir, prefix, f'top{topk}_merge_lh.nii.gz'))
-        new_img_like(roi, rh_roi_attention_array, roi.affine).to_filename(os.path.join(analysisdir, prefix, f'top{topk}_merge_rh.nii.gz'))
+        image.new_img_like(roi, lh_roi_attention_array, roi.affine).to_filename(os.path.join(analysisdir, prefix, f'top{topk}_merge_lh.nii.gz'))
+        image.new_img_like(roi, rh_roi_attention_array, roi.affine).to_filename(os.path.join(analysisdir, prefix, f'top{topk}_merge_rh.nii.gz'))
 
     else:
         for k, (i, attention) in enumerate(zip(order, node_attention)):
             roi_attention_array = np.zeros_like(roi_array)
             roi_attention_array[roi_array==(i+1)] = attention
-            new_img_like(roi, roi_attention_array, roi.affine).to_filename(os.path.join(analysisdir, prefix, f'top{k+1}_roi{i+1}.nii.gz'))
+            image.new_img_like(roi, roi_attention_array, roi.affine).to_filename(os.path.join(analysisdir, prefix, f'top{k+1}_roi{i+1}.nii.gz'))
 
 
 def analyze_rest(argv):
     assert argv.roi=='schaefer', 'Schafer400 atlas is currently supported for analysis'
     analysisdir = os.path.join(argv.targetdir, 'analysis')
-    roi = fetch_atlas_schaefer_2018(data_dir=os.path.join(argv.sourcedir, 'roi'))
+    roi = datasets.fetch_atlas_schaefer_2018(data_dir=os.path.join(argv.sourcedir, 'roi'))
     roidir = roi['maps']
     roimetadir = os.path.join(argv.sourcedir, 'roi', '7_400_coord.csv')
 
@@ -373,7 +381,7 @@ def analyze_rest(argv):
 
     # plot roi nifti
     node_attention = node_attention.mean((0,2))
-    roi = load_img(roidir)
+    roi = image.load_img(roidir)
     for layer, layer_node_attention in enumerate(node_attention):
         os.makedirs(os.path.join(analysisdir, 'node_attention', 'nifti', f'layer{layer+1}'), exist_ok=True)
         plot_nifti(layer_node_attention, roi, os.path.join(analysisdir, 'node_attention', 'nifti'), topk=20, prefix=f'layer{layer+1}')
@@ -434,7 +442,7 @@ def analyze_rest(argv):
 def analyze_task(argv):
     task_list = ['EMOTION', 'GAMBLING', 'LANGUAGE', 'MOTOR', 'RELATIONAL', 'SOCIAL', 'WM']
     analysisdir = os.path.join(argv.targetdir, 'analysis')
-    roi = fetch_atlas_schaefer_2018(data_dir=os.path.join(argv.sourcedir, 'roi'))
+    roi = datasets.fetch_atlas_schaefer_2018(data_dir=os.path.join(argv.sourcedir, 'roi'))
     roidir = roi['maps']
     roimetadir = os.path.join(argv.sourcedir, 'roi', '7_400_coord.csv')
 
@@ -483,9 +491,11 @@ def analyze_task(argv):
                 contrast_type = "".join(contrast_type)
 
                 glm_contrast = node_attention_glm(attention, design_matrix, contrast)
-                for i, (stat, z_score, p_value) in enumerate(zip(glm_contrast.stat().squeeze(), glm_contrast.z_score().squeeze(), glm_contrast.p_value().squeeze())):
-                    task_roidict[i+1][f'layer{layer+1}_{contrast_type}_stat'] = stat
-                    task_roidict[i+1][f'layer{layer+1}_{contrast_type}_z_score'] = z_score
+                for i, (effect, variance, p_value) in enumerate(glm_contrast):
+                    # task_roidict[i+1][f'layer{layer+1}_{contrast_type}_stat'] = stat
+                    # task_roidict[i+1][f'layer{layer+1}_{contrast_type}_z_score'] = z_score
+                    task_roidict[i+1][f'layer{layer+1}_{contrast_type}_effect'] = effect
+                    task_roidict[i+1][f'layer{layer+1}_{contrast_type}_variance'] = variance
                     task_roidict[i+1][f'layer{layer+1}_{contrast_type}_p_value'] = p_value
                     task_roidict[i+1][f'layer{layer+1}_{contrast_type}_significant'] = p_value<0.05
                     task_roidict[i+1][f'layer{layer+1}_{contrast_type}_significant_bonferroni'] = p_value<0.05/(400*argv.num_layers)
@@ -559,7 +569,7 @@ def analyze_task(argv):
                     contrast[-1] = '-1'
                     contrast = ''.join(contrast)
                     task_roidict[i+1][f'node_attention_{task_type}_layer{layer}'] = attention[task_block[task][task_type].to_numpy().nonzero()[0]].mean(0)
-                    task_roidict[i+1][f'glm_zscore_{task_type}_layer{layer}'] = glm_df[task][f'layer{layer+1}_{contrast}_z_score'].values[i]
+                    task_roidict[i+1][f'glm_effect_{task_type}_layer{layer}'] = glm_df[task][f'layer{layer+1}_{contrast}_effect'].values[i]
                     task_roidict[i+1][f'glm_significant_{task_type}_layer{layer}'] = glm_df[task][f'layer{layer+1}_{contrast}_significant_bonferroni'].values[i]
         roidf = pd.DataFrame.from_dict(task_roidict.values())
         roidf.to_csv(os.path.join(analysisdir, 'node_attention', f'roi_summary_{task}.csv'))
@@ -650,7 +660,7 @@ def analyze_task(argv):
         plt.close(fig_bar)
 
     # plot roi nifti
-    roi = load_img(roidir)
+    roi = image.load_img(roidir)
     for task in task_list:
         df = glm_df[task]
         os.makedirs(os.path.join(analysisdir, 'node_attention', task, 'nifti'), exist_ok=True)
@@ -661,7 +671,7 @@ def analyze_task(argv):
                 contrast[-1] = '-1'
                 contrast = ''.join(contrast)
                 topk = len(df.loc[df[f'layer{layer+1}_{contrast}_significant_bonferroni']==True])
-                node_attention = df[f'layer{layer+1}_{contrast}_z_score'].values
+                node_attention = df[f'layer{layer+1}_{contrast}_effect'].values
                 os.makedirs(os.path.join(analysisdir, 'node_attention', task, 'nifti', f'layer{layer+1}',f'c{contrast}'), exist_ok=True)
                 plot_nifti(node_attention, roi, os.path.join(analysisdir, 'node_attention', task, 'nifti'), topk=topk, prefix=f'layer{layer+1}/c{contrast}')
 
